@@ -4,7 +4,7 @@ import { rankSearchResults } from '../lib/normalize';
 import { useAudio } from '../context/AudioContext';
 import { songRepository } from '../data/songRepository';
 import { firebaseSync } from '../services/firebaseSync';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Search,
   Plus,
@@ -36,6 +36,7 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  GripVertical,
 } from 'lucide-react';
 
 interface SongListProps {
@@ -84,11 +85,17 @@ export const SongList: React.FC<SongListProps> = ({
   onOpenShare,
   onSongsUpdated,
 }) => {
-  const { playSong, openPlayerForSong, currentSong, isPlaying } = useAudio();
+  const { playSong, openPlayerForSong, currentSong, isPlaying, togglePlay } = useAudio();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [quickFilter, setQuickFilter] = useState<QuickFilterOption>('has_lyrics');
   const [userFilter, setUserFilter] = useState<string>('all');
+  const [isReorderMode, setIsReorderMode] = useState<boolean>(false);
+
+  const handleReorderSongs = async (newSongs: SongRecord[]) => {
+    await songRepository.reorderSongs(newSongs.map((s) => s.id));
+    if (onSongsUpdated) onSongsUpdated();
+  };
 
   // Multi-select batch mode
   const [isSelectMode, setIsSelectMode] = useState<boolean>(false);
@@ -447,6 +454,24 @@ export const SongList: React.FC<SongListProps> = ({
                   >
                     <ArrowUpDown className="w-3.5 h-3.5 text-violet-400" />
                     <span className="truncate max-w-[85px]">{SORT_LABELS[sortBy]}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsReorderMode(!isReorderMode);
+                      if (!isReorderMode) setSortBy('serial');
+                      setIsFilterDrawerOpen(false);
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-[18px] text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                      isReorderMode
+                        ? 'bg-violet-500 text-white border-violet-500 shadow-sm'
+                        : 'frosted-surface text-slate-300 hover:text-white border-white/10 hover:border-violet-500/30'
+                    }`}
+                    title="Drag and drop to reorder catalogue"
+                  >
+                    <GripVertical className="w-3.5 h-3.5 text-violet-400" />
+                    <span>{isReorderMode ? 'Exit Order' : 'Order'}</span>
                   </button>
                 </div>
 
@@ -953,11 +978,105 @@ export const SongList: React.FC<SongListProps> = ({
           </div>
         )}
 
-        <AnimatePresence mode="popLayout">
-          {filteredAndSortedSongs.length > 0 ? (
-            filteredAndSortedSongs.map((song, idx) => {
+        {/* Reorder Mode Banner */}
+        {isReorderMode && (
+          <div className="p-2.5 rounded-[18px] bg-violet-500/15 border border-violet-500/35 flex items-center justify-between mb-2 text-xs text-violet-200 shadow-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <GripVertical className="w-4 h-4 text-violet-400 shrink-0" />
+              <span className="truncate">Drag grip handle (⋮⋮) to arrange song order</span>
+            </div>
+            <button
+              onClick={() => setIsReorderMode(false)}
+              className="px-3 py-1 rounded-full btn-primary-gradient text-[11px] font-bold text-white shadow-sm shrink-0 active:scale-95 transition-all"
+            >
+              Done
+            </button>
+          </div>
+        )}
+
+        {isReorderMode ? (
+          <Reorder.Group
+            axis="y"
+            values={filteredAndSortedSongs}
+            onReorder={handleReorderSongs}
+            className="space-y-2 list-none p-0 m-0"
+          >
+            {filteredAndSortedSongs.map((song, idx) => {
               const catName = categoryMap.get(song.categoryId) || 'Other';
               const isCurrentlyPlaying = currentSong?.id === song.id && isPlaying;
+
+              return (
+                <Reorder.Item
+                  key={song.id}
+                  value={song}
+                  className="frosted-surface rounded-[22px] px-3 py-2.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-all flex items-center justify-between gap-2.5 group shadow-sm"
+                >
+                  {/* YouTube Drag Handle */}
+                  <div
+                    className="cursor-grab active:cursor-grabbing p-1.5 -ml-1 text-slate-400 hover:text-violet-300 transition-colors touch-none shrink-0"
+                    title="Drag to reorder"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <GripVertical className="w-4 h-4" />
+                  </div>
+
+                  {/* Serial badge */}
+                  <div className="w-10 h-10 rounded-[13px] bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-violet-400 shrink-0 shadow-sm">
+                    <span className="text-xs font-mono font-bold text-violet-300">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                  </div>
+
+                  {/* Center Track Info */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <h3 className="text-[14px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
+                      {song.titleBn || song.titleLatin}
+                    </h3>
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
+                      <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
+                        {catName}
+                      </span>
+                      {song.titleLatin && song.titleLatin !== song.titleBn && (
+                        <span className="truncate">{song.titleLatin}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Play & Open Chevron */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isCurrentlyPlaying) {
+                          togglePlay();
+                        } else {
+                          playSong(song, filteredAndSortedSongs);
+                        }
+                      }}
+                      className="w-8 h-8 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center text-slate-300 hover:text-white active:scale-90"
+                    >
+                      {isCurrentlyPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectSong(song);
+                      }}
+                      className="w-8 h-8 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center text-slate-400 hover:text-white active:scale-90"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </Reorder.Item>
+              );
+            })}
+          </Reorder.Group>
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {filteredAndSortedSongs.length > 0 ? (
+              filteredAndSortedSongs.map((song, idx) => {
+                const catName = categoryMap.get(song.categoryId) || 'Other';
+                const isCurrentlyPlaying = currentSong?.id === song.id && isPlaying;
               const isSelected = selectedSongIds.has(song.id);
 
               return (
@@ -1172,6 +1291,7 @@ export const SongList: React.FC<SongListProps> = ({
             </div>
           )}
         </AnimatePresence>
+      )}
       </main>
 
       {/* Floating Action Bar during Multi-Select Mode */}
