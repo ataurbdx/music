@@ -1406,7 +1406,7 @@ node server.js`;
                       Android App (APK)
                     </div>
                     <p className="text-[11px] text-[#94A3B8] light:text-slate-500 mt-0.5">
-                      Direct offline install • v2.0 • 4.8 MB
+                      Direct offline install • v2.0 • 14.0 MB
                     </p>
                   </div>
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
@@ -1422,7 +1422,7 @@ node server.js`;
                   className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(16,185,129,0.35)] active:scale-95 transition-all cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download APK (4.8 MB)</span>
+                  <span>Download APK (14.0 MB)</span>
                 </a>
               </div>
 
