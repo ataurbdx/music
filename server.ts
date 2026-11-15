@@ -1584,9 +1584,35 @@ app.get(['/download', '/api/audio/download'], async (req, res) => {
       stderr += d.toString();
     });
 
-    child.on('error', (err) => {
+    const tryInnertubeStream = async (fallbackErrMsg?: string) => {
+      if (responded || res.headersSent) return;
+      try {
+        const { Innertube, UniversalCache } = await import('youtubei.js');
+        const yt = await Innertube.create({
+          cache: new UniversalCache(false),
+          generate_session_locally: true,
+        });
+        const match = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+        const videoId = match ? match[1] : cleanUrl;
+        const stream = await yt.download(videoId, {
+          type: 'audio',
+          quality: 'best',
+        });
+        responded = true;
+        res.setHeader('Content-Type', 'audio/mp4');
+        res.setHeader('Content-Disposition', `attachment; filename="${videoId}.m4a"`);
+        for await (const chunk of stream) {
+          res.write(chunk);
+        }
+        res.end();
+      } catch (inErr: any) {
+        sendJson(500, { error: fallbackErrMsg || inErr?.message || 'Failed to extract audio from YouTube.' });
+      }
+    };
+
+    child.on('error', (_err) => {
       clearTimeout(timeout);
-      sendJson(500, { error: `Process execution error: ${err.message}` });
+      tryInnertubeStream('yt-dlp is not available. Stream fallback engaged.');
     });
 
     child.on('close', (code) => {
@@ -1598,9 +1624,7 @@ app.get(['/download', '/api/audio/download'], async (req, res) => {
           .replace(/WARNING:.*\n?/g, '')
           .replace(/ERROR: \[youtube\] /g, '')
           .trim();
-        return sendJson(500, {
-          error: cleanErr || 'Failed to extract audio from YouTube. The video may be restricted or unavailable.',
-        });
+        return tryInnertubeStream(cleanErr);
       }
 
       // Find the converted file
