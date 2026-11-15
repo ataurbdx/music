@@ -1,0 +1,57 @@
+# Antigravity Rules - Tour Lyrics (Bengali Tour Song Lyrics App)
+
+This rules file connects and enforces the specifications from the project's primary rulebooks:
+1. `Context/PROJECT_DETAILS_Bengali_Tour_Lyrics_App_v2.md`
+2. `Context/ai_studio_system_instructions.md`
+
+---
+
+## 1. Core Architecture & Philosophy
+- **Offline-First Mobile Library**: Once lyrics are saved, browsing, reading, searching, and playback MUST require zero internet, zero external API keys, and zero external requests.
+- **Extract, Never Generate**:
+  - Gemini is strictly an **extractor/cleaner**, NOT a creative author.
+  - Gemini must NEVER fabricate, hallucinate, complete from memory, translate, or "guess" lyrics.
+  - Every extracted line must be verified against source text with fuzzy matching (`verify.js` line coverage `>= 0.90`).
+  - Auto-generated or hallucinated lyrics (such as poetic inventions) are strictly forbidden.
+- **Privacy & Security**:
+  - The Gemini API key belongs to the user and is never bundled, logged, or exported.
+  - It is kept in secure local storage or passed via header `x-goog-api-key`.
+  - Catalogue sharing exports only song metadata (title, category, youtubeUrl), stripping proprietary lyrics.
+
+---
+
+## 2. UI / UX Design Mandate: Emerald-Charcoal Mobile Aesthetics
+- **Viewport**: Strictly mobile-first single vertical column (`max-w-[430px] w-full mx-auto min-h-dvh flex flex-col`). When previewed on desktop screens, displayed inside a centered sleek mobile frame with subtle bezel.
+- **Color Palette**:
+  - Background Canvas: `#0B110E` to `#101915` with subtle top ambient emerald glow (`rgba(31, 214, 122, 0.12)`).
+  - Cards & Elevated Panels: `#16211C` / frosted translucent dark surfaces with hairline borders (`border-white/[0.08]`) and hyper-rounded corners (`rounded-[28px]` or `rounded-3xl`).
+  - Primary Accent: Neon-Emerald (`#1FD67A` / `#22E584`) with crisp dark text (`#06140D`) and soft emerald glow.
+  - Typography: Off-white (`#F4F7F5`) for primary text/lyrics, soft sage-gray (`#8A9992`) for secondary metadata. Bengali font: `'Noto Sans Bengali', sans-serif` with generous line-height (`leading-relaxed` to `leading-loose`).
+- **Interactive Elements**:
+  - Large tactile circular buttons (`w-14 h-14 rounded-full`) for quick actions.
+  - Full-width pill CTAs (`h-14 rounded-full font-semibold`).
+  - Modern bottom navigation dock with glowing emerald active indicators.
+
+---
+
+## 3. Data Storage & Repository Layer
+- **IndexedDB via Dexie**: All database interactions are channeled strictly through `src/data/songRepository.js` (or `.ts`). UI components must never access Dexie stores directly.
+- **Categories**: Starter categories include Folk, Baul, Modern, Patriotic, Group / Adda, Regional, Other.
+- **Search Normalization**: Bengali NFC unicode, punctuation stripping, digit mapping, Latin phonetic folding (e.g., `ee -> i`, `oo -> u`, `sh -> s`, `bh -> v`, `ph -> f`) implemented symmetrically for indexed keys and search queries.
+
+---
+
+## 4. YouTube & Audio Engine (yt-dlp + ffmpeg)
+- **YouTube Canonicalization**: Extract 11-char video ID, clean tracking query params.
+- **Audio Extraction & Streaming**:
+  - Uses local `yt-dlp` (`yt-dlp.exe` on Windows or configured PATH / binary) paired with `ffmpeg`.
+  - Cross-platform paths using `os.tmpdir()` and `process.execPath`.
+  - Child process execution must guard `res.headersSent` and handle error/close safely without double-sending headers or crashing Express.
+  - Support direct audio caching/playback in the mobile interface.
+
+---
+
+## 5. Startup & Onboarding Flow
+- On initial launch or when the library is empty, the user is offered:
+  1. **Upload CSV**: Direct upload of catalogue CSV. Must parse and transition smoothly without blank or repeated onboarding prompts.
+  2. **Start Blank**: Jump directly to an empty library without forcing sample mock songs.

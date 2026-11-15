@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tour Lyrics</string>
+    <string name="title_activity_main">Tour Lyrics</string>
+    <string name="package_name">com.tourlyrics.app</string>
+    <string name="custom_url_scheme">com.tourlyrics.app</string>
+</resources>
