@@ -156,7 +156,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setStatusMessage({
         text: res.success
           ? `Cloud Sync Complete: Pulled ${res.pulled} songs, uploaded ${res.pushed} songs!`
-          : `Sync status: ${res.message}`,
+          : `Sync status: Could not synchronize with cloud.`,
         isError: !res.success,
       });
       if (res.pulled > 0) {

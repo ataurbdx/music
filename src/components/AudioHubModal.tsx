@@ -204,7 +204,7 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
         bitrate: `${quality}bps`,
         sizeBytes: audioBlob.size,
         durationSec: 180,
-        sourceType: waterfallResult.sourceType,
+        sourceType: 'yt-download',
         localUri: null,
       };
 
@@ -280,7 +280,7 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
         bitrate: `${item.quality}bps`,
         sizeBytes: audioBlob.size,
         durationSec: 180,
-        sourceType: waterfallResult.sourceType,
+        sourceType: 'yt-download',
         localUri: null,
       };
 

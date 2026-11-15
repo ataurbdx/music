@@ -102,7 +102,10 @@ export function firestoreToSong(data: Record<string, any>, docId: string): SongR
     lyricsOrigin: lyricsContent ? 'typed' : null,
     sources: [],
     notes: '',
-    searchKey: `${titleBn} ${titleLatin}`.toLowerCase(),
+    searchKey: {
+      bn: (titleBn || '').toLowerCase(),
+      latin: (titleLatin || '').toLowerCase(),
+    },
     createdAt: createdIso,
     updatedAt: updatedIso,
     lyricsUpdatedAt: lyricsContent ? updatedIso : null,
