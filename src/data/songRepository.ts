@@ -731,7 +731,38 @@ class SongRepository {
   async getAllPlaylists(): Promise<PlaylistRecord[]> {
     await this.init();
     const playlists = await db.playlists.toArray();
-    return playlists.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return playlists.sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) {
+        return a.order - b.order;
+      }
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }
+
+  async reorderPlaylists(playlistIds: string[]): Promise<void> {
+    await this.init();
+    for (let i = 0; i < playlistIds.length; i++) {
+      const id = playlistIds[i];
+      const pl = await db.playlists.get(id);
+      if (pl) {
+        pl.order = i;
+        await db.playlists.put(pl);
+      }
+    }
+  }
+
+  async reorderSongs(songIds: string[]): Promise<void> {
+    await this.init();
+    for (let i = 0; i < songIds.length; i++) {
+      const id = songIds[i];
+      const song = await db.songs.get(id);
+      if (song) {
+        song.importSerial = i + 1;
+        await db.songs.put(song);
+      }
+    }
   }
 
   async getPlaylistById(id: string): Promise<PlaylistRecord | undefined> {

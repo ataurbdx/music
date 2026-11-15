@@ -74,6 +74,7 @@ export interface PlaylistRecord {
   coverColor: string;
   youtubePlaylistId?: string;
   youtubePlaylistUrl?: string;
+  order?: number;
   createdAt: string;
   updatedAt: string;
 }

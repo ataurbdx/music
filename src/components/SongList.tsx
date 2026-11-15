@@ -4,7 +4,7 @@ import { rankSearchResults } from '../lib/normalize';
 import { useAudio } from '../context/AudioContext';
 import { songRepository } from '../data/songRepository';
 import { firebaseSync } from '../services/firebaseSync';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'motion/react';
 import {
   Search,
   Plus,
@@ -36,6 +36,9 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
 } from 'lucide-react';
 
 interface SongListProps {
@@ -70,6 +73,94 @@ const SORT_LABELS: Record<SortOption, string> = {
   updated: 'Recent',
 };
 
+interface DraggableSongCatalogueRowProps {
+  song: SongRecord;
+  idx: number;
+  total: number;
+  catName: string;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDragEnd: () => void;
+}
+
+const DraggableSongCatalogueRow: React.FC<DraggableSongCatalogueRowProps> = ({
+  song,
+  idx,
+  total,
+  catName,
+  onMoveUp,
+  onMoveDown,
+  onDragEnd,
+}) => {
+  const dragControls = useDragControls();
+
+  return (
+    <Reorder.Item
+      key={song.id}
+      value={song}
+      dragListener={false}
+      dragControls={dragControls}
+      onDragEnd={onDragEnd}
+      whileDrag={{ scale: 1.02, zIndex: 50, boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)' }}
+      className="frosted-surface rounded-[22px] px-3.5 py-2.5 min-h-[68px] cursor-pointer transition-colors flex items-center justify-between gap-3 group shadow-sm select-none relative"
+    >
+      {/* YouTube Style Drag Grip Handle */}
+      <div
+        className="cursor-grab active:cursor-grabbing p-1.5 -ml-1 text-slate-400 hover:text-violet-300 transition-colors touch-none shrink-0 flex items-center justify-center select-none"
+        title="Drag to reorder"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragControls.start(e);
+        }}
+        onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: 'none' }}
+      >
+        <GripVertical className="w-5 h-5 text-violet-400" />
+      </div>
+
+      <div className="w-10 h-10 rounded-[13px] bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-violet-400 shrink-0 shadow-sm font-mono text-xs font-bold">
+        {String(idx + 1).padStart(2, '0')}
+      </div>
+
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <h3 className="text-[14.5px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
+          {song.titleBn || song.titleLatin}
+        </h3>
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
+          <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
+            {catName}
+          </span>
+          {song.titleLatin && song.titleLatin !== song.titleBn && (
+            <span className="truncate">{song.titleLatin}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          disabled={idx === 0}
+          onClick={onMoveUp}
+          className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-300 hover:text-white hover:border-violet-500/40 disabled:opacity-20 active:scale-90 transition-all shadow-sm"
+          title="Move Up"
+        >
+          <ArrowUp className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          disabled={idx === total - 1}
+          onClick={onMoveDown}
+          className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-300 hover:text-white hover:border-violet-500/40 disabled:opacity-20 active:scale-90 transition-all shadow-sm"
+          title="Move Down"
+        >
+          <ArrowDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </Reorder.Item>
+  );
+};
+
 export const SongList: React.FC<SongListProps> = ({
   songs,
   categories,
@@ -95,6 +186,7 @@ export const SongList: React.FC<SongListProps> = ({
   const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(new Set());
   const [batchActionNotice, setBatchActionNotice] = useState<string>('');
   const [isBatchDeleteConfirmOpen, setIsBatchDeleteConfirmOpen] = useState<boolean>(false);
+  const [isReorderMode, setIsReorderMode] = useState<boolean>(false);
 
   // Firebase Cloud Sync State (matches song-app)
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'synced' | 'offline' | 'error'>(firebaseSync.getState());
@@ -318,6 +410,33 @@ export const SongList: React.FC<SongListProps> = ({
     settings.userName,
   ]);
 
+  const [reorderCatalogueSongs, setReorderCatalogueSongs] = useState<SongRecord[]>([]);
+
+  React.useEffect(() => {
+    if (isReorderMode) {
+      setReorderCatalogueSongs(filteredAndSortedSongs);
+    }
+  }, [isReorderMode, filteredAndSortedSongs]);
+
+  const handleCatalogueDragEnd = async () => {
+    await songRepository.reorderSongs(reorderCatalogueSongs.map((s) => s.id));
+    if (onSongsUpdated) onSongsUpdated();
+  };
+
+  const moveSongInCatalogue = async (fromIndex: number, direction: 'up' | 'down') => {
+    const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= reorderCatalogueSongs.length) return;
+
+    const reordered = [...reorderCatalogueSongs];
+    const temp = reordered[fromIndex];
+    reordered[fromIndex] = reordered[toIndex];
+    reordered[toIndex] = temp;
+    setReorderCatalogueSongs(reordered);
+
+    await songRepository.reorderSongs(reordered.map((s) => s.id));
+    if (onSongsUpdated) onSongsUpdated();
+  };
+
   // Selection toggle
   const toggleSongSelection = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -420,7 +539,7 @@ export const SongList: React.FC<SongListProps> = ({
                 {/* ========================================================
                     TOP ROW: SELECT & SERIAL (FLEX CONTENT BETWEEN)
                    ======================================================== */}
-                <div className="flex items-center justify-between gap-2 p-1.5 rounded-[22px] bg-white/[0.04] border border-white/10 shadow-sm">
+                <div className="flex items-center justify-between gap-1.5 p-1.5 rounded-[22px] bg-white/[0.04] border border-white/10 shadow-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -428,7 +547,7 @@ export const SongList: React.FC<SongListProps> = ({
                       setSelectedSongIds(new Set());
                       setIsFilterDrawerOpen(false);
                     }}
-                    className={`flex-1 py-2 px-3 rounded-[18px] text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                    className={`flex-1 py-2 px-2.5 rounded-[18px] text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
                       isSelectMode
                         ? 'btn-primary-gradient text-white shadow-sm'
                         : 'frosted-surface text-slate-300 hover:text-white border-white/10 hover:border-violet-500/30'
@@ -436,17 +555,35 @@ export const SongList: React.FC<SongListProps> = ({
                     title="Toggle multi-select mode"
                   >
                     <CheckSquare className="w-3.5 h-3.5 text-violet-400" />
-                    <span>{isSelectMode ? 'Exit Select' : 'Select'}</span>
+                    <span>{isSelectMode ? 'Exit' : 'Select'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={cycleSort}
-                    className="flex-1 py-2 px-3 rounded-[18px] frosted-surface border border-white/10 hover:border-violet-500/30 text-xs font-medium text-slate-300 hover:text-white flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                    className="flex-1 py-2 px-2.5 rounded-[18px] frosted-surface border border-white/10 hover:border-violet-500/30 text-xs font-medium text-slate-300 hover:text-white flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                     title="Cycle sort order"
                   >
                     <ArrowUpDown className="w-3.5 h-3.5 text-violet-400" />
-                    <span className="truncate max-w-[85px]">{SORT_LABELS[sortBy]}</span>
+                    <span className="truncate max-w-[65px]">{SORT_LABELS[sortBy]}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsReorderMode(!isReorderMode);
+                      if (!isReorderMode) setSortBy('serial');
+                      setIsFilterDrawerOpen(false);
+                    }}
+                    className={`flex-1 py-2 px-2.5 rounded-[18px] text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                      isReorderMode
+                        ? 'bg-violet-500 text-white border-violet-500 shadow-sm'
+                        : 'frosted-surface text-slate-300 hover:text-white border-white/10 hover:border-violet-500/30'
+                    }`}
+                    title="Reorder songs in catalogue"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5 text-violet-400" />
+                    <span>{isReorderMode ? 'Done' : 'Order'}</span>
                   </button>
                 </div>
 
@@ -953,225 +1090,165 @@ export const SongList: React.FC<SongListProps> = ({
           </div>
         )}
 
-        <AnimatePresence mode="popLayout">
-          {filteredAndSortedSongs.length > 0 ? (
-            filteredAndSortedSongs.map((song, idx) => {
-              const catName = categoryMap.get(song.categoryId) || 'Other';
-              const isCurrentlyPlaying = currentSong?.id === song.id && isPlaying;
-              const isSelected = selectedSongIds.has(song.id);
-
-              return (
-                <motion.div
-                  key={song.id}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.15, delay: Math.min(idx * 0.02, 0.2) }}
-                  onClick={() => {
-                    if (isSelectMode) {
-                      toggleSongSelection(song.id);
-                    } else {
-                      onSelectSong(song);
-                    }
-                  }}
-                  className={`frosted-surface rounded-[22px] px-3.5 py-2.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-all flex items-center justify-between gap-3 group shadow-sm ${
-                    isSelected ? 'ring-2 ring-violet-500 bg-violet-500/10' : ''
-                  }`}
-                >
-                  {/* Select Checkbox if in multi-select mode, else Left Track Artwork */}
-                  {isSelectMode ? (
-                    <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                      <div
-                        onClick={(e) => toggleSongSelection(song.id, e)}
-                        className={`w-6 h-6 rounded-md border flex items-center justify-center ${
-                          isSelected
-                            ? 'btn-primary-gradient text-white border-transparent'
-                            : 'border-white/20'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-11 h-11 rounded-[14px] bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-violet-400 shrink-0 shadow-sm">
-                      <Music className="w-5 h-5" />
-                    </div>
-                  )}
-
-                  {/* Center Track Info: perfectly contained within icon height */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    {/* Primary Bengali / English Title */}
-                    <h3 className="text-[14.5px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
-                      {song.titleBn || song.titleLatin}
-                    </h3>
-
-                    {/* Unified Metadata Line: Category • Latin • Contributor */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
-                      <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
-                        {catName}
-                      </span>
-
-                      {song.titleLatin && song.titleLatin !== song.titleBn && (
-                        <span className="truncate">{song.titleLatin}</span>
-                      )}
-
-                      {song.createdByUser && (
-                        <span className="text-slate-400 font-medium truncate flex items-center gap-1 shrink-0">
-                          <span className="opacity-40">•</span>
-                          <span>{song.createdByUser}</span>
-                        </span>
-                      )}
-
-                      {song.isPrivate && (
-                        <span className="text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded text-[9px] flex items-center gap-0.5 shrink-0">
-                          <Lock className="w-2.5 h-2.5" />
-                        </span>
-                      )}
-
-                      {song.importSerial != null && (
-                        <span className="text-[10px] font-mono text-[#64748B] ml-auto shrink-0">
-                          #{song.importSerial}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right: Perfect Center Glass Action Circle */}
-                  <div className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 group-hover:text-violet-300 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors shrink-0">
-                    <ChevronRight className="w-4 h-4" />
-                  </div>
-
-                    {/* ========================================================
-                        3. CARD FOOTER: ACTION BUTTONS (Temporarily Commented Out)
-                        Uncomment below anytime to restore YouTube, Fetch, Download, & Play buttons
-                       ======================================================== */}
-                    {/*
-                    <div className="pt-2.5 mt-2.5 border-t border-white/5 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {song.hasAudio && (
-                          <span className="text-[9px] font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 px-1.5 py-0.2 rounded-md uppercase tracking-wider flex items-center gap-0.5">
-                            <Headphones className="w-2.5 h-2.5" />
-                            <span>Audio</span>
-                          </span>
-                        )}
-
-                        {song.youtubePlaylistId ? (
-                          <span className="text-[9px] font-bold text-violet-300 bg-violet-500/15 border border-violet-500/30 px-1.5 py-0.2 rounded-md uppercase tracking-wider flex items-center gap-0.5">
-                            <Youtube className="w-2.5 h-2.5 text-rose-400" />
-                            <span>Playlist</span>
-                          </span>
-                        ) : song.youtubeVideoId ? (
-                          <span className="text-[9px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.2 rounded-md uppercase tracking-wider flex items-center gap-0.5">
-                            <Youtube className="w-2.5 h-2.5" />
-                            <span>YouTube</span>
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div className="shrink-0 flex items-center gap-2">
-                        {song.lyricsStatus === 'reviewed' ? (
-                          <div className="w-7 h-7 rounded-full bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shadow-sm" title="Lyrics Reviewed">
-                            <CheckCircle2 className="w-4 h-4" />
-                          </div>
-                        ) : song.lyricsStatus === 'unreviewed' ? (
-                          <div className="w-7 h-7 rounded-full bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-amber-400 shadow-sm" title="Lyrics Pending Review">
-                            <AlertCircle className="w-4 h-4" />
-                          </div>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenPrepare(song);
-                            }}
-                            className="px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-500/30 text-[10px] font-semibold text-violet-300 hover:bg-violet-500 hover:text-white transition-all active:scale-90"
-                            title="Search & Prepare Lyrics"
-                          >
-                            Fetch
-                          </button>
-                        )}
-
-                        {!song.hasAudio && (song.youtubeVideoId || song.youtubePlaylistId || song.youtubeUrl) && onOpenAudioHub && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenAudioHub(song);
-                            }}
-                            className="w-9 h-9 rounded-full frosted-surface border border-violet-500/30 text-violet-300 hover:text-white hover:bg-violet-600/30 hover:border-violet-500/60 flex items-center justify-center transition-all active:scale-90 shadow-sm"
-                            title="Download Offline Audio (via yt-dlp)"
-                          >
-                            <Download className="w-4 h-4 stroke-[2.2]" />
-                          </button>
-                        )}
-
-                        {(song.hasAudio || song.youtubeVideoId || song.youtubePlaylistId || song.youtubeUrl) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!song.hasAudio && (song.youtubeVideoId || song.youtubePlaylistId || song.youtubeUrl)) {
-                                openPlayerForSong(song, 'visualizer', filteredAndSortedSongs);
-                              } else {
-                                playSong(song, filteredAndSortedSongs);
-                              }
-                            }}
-                            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                              isCurrentlyPlaying
-                                ? 'btn-primary-gradient text-white shadow-[0_0_15px_rgba(139,92,246,0.5)]'
-                                : 'frosted-surface border border-white/10 text-white hover:border-violet-500/50'
-                            }`}
-                            title={
-                              isCurrentlyPlaying
-                                ? 'Playing'
-                                : song.hasAudio
-                                ? 'Play Audio'
-                                : song.youtubePlaylistId
-                                ? 'Play Playlist'
-                                : 'Play YouTube'
-                            }
-                          >
-                            {isCurrentlyPlaying ? (
-                              <Pause className="w-4 h-4 fill-current" />
-                            ) : (
-                              <Play className="w-4 h-4 ml-0.5 fill-current" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    */}
-                </motion.div>
-              );
-            })
-          ) : (
-            <div className="my-4 py-8 px-5 text-center text-[#94A3B8] frosted-card rounded-[26px] border border-white/10 space-y-3.5 shadow-md">
-              <div className="w-13 h-13 mx-auto rounded-2xl bg-violet-500/10 border border-violet-500/25 flex items-center justify-center text-violet-400 shadow-[0_0_20px_rgba(139,92,246,0.15)]">
-                <FileText className="w-6 h-6 opacity-80" />
+        {/* Reorder Mode or Normal Song List */}
+        {isReorderMode ? (
+          <div className="space-y-2">
+            <div className="p-2.5 rounded-[18px] bg-violet-500/15 border border-violet-500/35 flex items-center justify-between mb-2 text-xs text-violet-200 shadow-md">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="font-bold text-violet-300">Reorder Mode:</span>
+                <span className="truncate">Drag ↕ or use ▲ / ▼ to set sequence</span>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-sm sm:text-base font-bold text-white light:text-slate-900">No Matching Songs</h3>
-                <p className="text-[11px] sm:text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Try clearing search filters, scan device music, import from YouTube, or add manually.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-1.5">
-                <button
-                  onClick={onOpenImport}
-                  className="btn-primary-gradient px-4 py-2 rounded-full text-xs font-bold text-white shadow-md active:scale-95 inline-flex items-center gap-1.5"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Scan & Import Music</span>
-                </button>
-                <button
-                  onClick={onAddSong}
-                  className="frosted-surface border border-white/15 px-4 py-2 rounded-full text-xs font-semibold text-white active:scale-95 inline-flex items-center gap-1.5 hover:bg-white/10"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Add Single Song</span>
-                </button>
-              </div>
+              <button
+                onClick={() => setIsReorderMode(false)}
+                className="px-3 py-1 rounded-full btn-primary-gradient text-[11px] font-bold text-white shadow-sm shrink-0 active:scale-95 transition-all"
+              >
+                Done
+              </button>
             </div>
-          )}
-        </AnimatePresence>
+
+            <Reorder.Group
+              axis="y"
+              values={reorderCatalogueSongs}
+              onReorder={setReorderCatalogueSongs}
+              className="space-y-2.5 list-none p-0 m-0"
+            >
+              {reorderCatalogueSongs.map((song, idx) => (
+                <DraggableSongCatalogueRow
+                  key={song.id}
+                  song={song}
+                  idx={idx}
+                  total={reorderCatalogueSongs.length}
+                  catName={categoryMap.get(song.categoryId) || 'Other'}
+                  onMoveUp={() => moveSongInCatalogue(idx, 'up')}
+                  onMoveDown={() => moveSongInCatalogue(idx, 'down')}
+                  onDragEnd={handleCatalogueDragEnd}
+                />
+              ))}
+            </Reorder.Group>
+          </div>
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {filteredAndSortedSongs.length > 0 ? (
+              filteredAndSortedSongs.map((song, idx) => {
+                const catName = categoryMap.get(song.categoryId) || 'Other';
+                const isCurrentlyPlaying = currentSong?.id === song.id && isPlaying;
+                const isSelected = selectedSongIds.has(song.id);
+
+                return (
+                  <motion.div
+                    key={song.id}
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.15, delay: Math.min(idx * 0.02, 0.2) }}
+                    onClick={() => {
+                      if (isSelectMode) {
+                        toggleSongSelection(song.id);
+                      } else {
+                        onSelectSong(song);
+                      }
+                    }}
+                    className={`frosted-surface rounded-[22px] px-3.5 py-2.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-all flex items-center justify-between gap-3 group shadow-sm ${
+                      isSelected ? 'ring-2 ring-violet-500 bg-violet-500/10' : ''
+                    }`}
+                  >
+                    {/* Select Checkbox if in multi-select mode, else Left Track Artwork */}
+                    {isSelectMode ? (
+                      <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                        <div
+                          onClick={(e) => toggleSongSelection(song.id, e)}
+                          className={`w-6 h-6 rounded-md border flex items-center justify-center ${
+                            isSelected
+                              ? 'btn-primary-gradient text-white border-transparent'
+                              : 'border-white/20'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-11 h-11 rounded-[14px] bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-violet-400 shrink-0 shadow-sm">
+                        <Music className="w-5 h-5" />
+                      </div>
+                    )}
+
+                    {/* Center Track Info: perfectly contained within icon height */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                      {/* Primary Bengali / English Title */}
+                      <h3 className="text-[14.5px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
+                        {song.titleBn || song.titleLatin}
+                      </h3>
+
+                      {/* Unified Metadata Line: Category • Latin • Contributor */}
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
+                        <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
+                          {catName}
+                        </span>
+
+                        {song.titleLatin && song.titleLatin !== song.titleBn && (
+                          <span className="truncate">{song.titleLatin}</span>
+                        )}
+
+                        {song.createdByUser && (
+                          <span className="text-slate-400 font-medium truncate flex items-center gap-1 shrink-0">
+                            <span className="opacity-40">•</span>
+                            <span>{song.createdByUser}</span>
+                          </span>
+                        )}
+
+                        {song.isPrivate && (
+                          <span className="text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 rounded text-[9px] flex items-center gap-0.5 shrink-0">
+                            <Lock className="w-2.5 h-2.5" />
+                          </span>
+                        )}
+
+                        {song.importSerial != null && (
+                          <span className="text-[10px] font-mono text-[#64748B] ml-auto shrink-0">
+                            #{song.importSerial}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Perfect Center Glass Action Circle */}
+                    <div className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 group-hover:text-violet-300 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors shrink-0">
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                  </motion.div>
+                );
+              })
+            ) : (
+              <div className="my-4 py-8 px-5 text-center text-[#94A3B8] frosted-card rounded-[26px] border border-white/10 space-y-3.5 shadow-md">
+                <div className="w-13 h-13 mx-auto rounded-2xl bg-violet-500/10 border border-violet-500/25 flex items-center justify-center text-violet-400 shadow-[0_0_20px_rgba(139,92,246,0.15)]">
+                  <FileText className="w-6 h-6 opacity-80" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm sm:text-base font-bold text-white light:text-slate-900">No Matching Songs</h3>
+                  <p className="text-[11px] sm:text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                    Try clearing search filters, scan device music, import from YouTube, or add manually.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1.5">
+                  <button
+                    onClick={onOpenImport}
+                    className="btn-primary-gradient px-4 py-2 rounded-full text-xs font-bold text-white shadow-md active:scale-95 inline-flex items-center gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Scan & Import Music</span>
+                  </button>
+                  <button
+                    onClick={onAddSong}
+                    className="frosted-surface border border-white/15 px-4 py-2 rounded-full text-xs font-semibold text-white active:scale-95 inline-flex items-center gap-1.5 hover:bg-white/10"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Add Single Song</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </AnimatePresence>
+        )}
       </main>
 
       {/* Floating Action Bar during Multi-Select Mode */}

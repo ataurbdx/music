@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { PlaylistRecord, SongRecord, CategoryRecord } from '../types';
 import { songRepository } from '../data/songRepository';
 import { useAudio } from '../context/AudioContext';
-import { motion } from 'motion/react';
+import { motion, Reorder, useDragControls } from 'motion/react';
 import {
   X,
   ListMusic,
@@ -20,6 +20,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  GripVertical,
 } from 'lucide-react';
 
 interface PlaylistManagerModalProps {
@@ -31,6 +32,243 @@ interface PlaylistManagerModalProps {
 }
 
 const PRESET_COLORS = ['#8B5CF6', '#6366F1', '#EC4899', '#06B6D4', '#F59E0B'];
+
+interface DraggablePlaylistSongRowProps {
+  song: SongRecord;
+  idx: number;
+  isCurrent: boolean;
+  isCurrentPlaying: boolean;
+  categoryName: string;
+  isReorderMode: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  isFirst: boolean;
+  isLast: boolean;
+  onSelectToRead?: () => void;
+  onTogglePlay: () => void;
+  onRemove: () => void;
+  onDragEnd: () => void;
+}
+
+const DraggablePlaylistSongRow: React.FC<DraggablePlaylistSongRowProps> = ({
+  song,
+  idx,
+  isCurrent,
+  isCurrentPlaying,
+  categoryName,
+  isReorderMode,
+  onMoveUp,
+  onMoveDown,
+  isFirst,
+  isLast,
+  onSelectToRead,
+  onTogglePlay,
+  onRemove,
+  onDragEnd,
+}) => {
+  const dragControls = useDragControls();
+
+  return (
+    <Reorder.Item
+      key={song.id}
+      value={song}
+      dragListener={false}
+      dragControls={dragControls}
+      onDragEnd={onDragEnd}
+      whileDrag={{ scale: 1.02, zIndex: 50, boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)' }}
+      className={`frosted-surface rounded-[22px] px-3 py-2.5 min-h-[68px] cursor-pointer transition-colors flex items-center justify-between gap-2.5 group shadow-sm select-none relative ${
+        isCurrent ? 'ring-2 ring-violet-500 bg-violet-500/10' : ''
+      }`}
+      onClick={onSelectToRead || onTogglePlay}
+    >
+      {/* YouTube Style Drag Grip Handle */}
+      <div
+        className="cursor-grab active:cursor-grabbing p-1.5 -ml-1 text-slate-400 hover:text-violet-300 transition-colors touch-none shrink-0 flex items-center justify-center select-none"
+        title="Drag to reorder"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragControls.start(e);
+        }}
+        onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: 'none' }}
+      >
+        <GripVertical className="w-4.5 h-4.5" />
+      </div>
+
+      {/* Number badge / playing equalizer */}
+      <div className="w-10 h-10 rounded-[13px] bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-violet-400 shrink-0 shadow-sm">
+        {isCurrentPlaying ? (
+          <Volume2 className="w-5 h-5 text-violet-300 animate-pulse" />
+        ) : (
+          <span className="text-xs font-mono font-bold text-violet-300">
+            {String(idx + 1).padStart(2, '0')}
+          </span>
+        )}
+      </div>
+
+      {/* Center Track Info */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <h4 className="text-[14px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
+          {song.titleBn || song.titleLatin}
+        </h4>
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
+          <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
+            {categoryName}
+          </span>
+          {song.titleLatin && song.titleLatin !== song.titleBn && (
+            <span className="truncate">{song.titleLatin}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Right: Actions */}
+      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {isReorderMode ? (
+          <>
+            <button
+              type="button"
+              disabled={isFirst}
+              onClick={onMoveUp}
+              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-300 hover:text-white hover:border-violet-500/40 disabled:opacity-20 active:scale-90 transition-all shadow-sm"
+              title="Move Up"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={isLast}
+              onClick={onMoveDown}
+              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-300 hover:text-white hover:border-violet-500/40 disabled:opacity-20 active:scale-90 transition-all shadow-sm"
+              title="Move Down"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={onTogglePlay}
+              className={`w-8 h-8 rounded-full border flex items-center justify-center active:scale-90 transition-all ${
+                isCurrentPlaying
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm'
+                  : 'bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:border-violet-500/40'
+              }`}
+              title={isCurrentPlaying ? 'Pause' : 'Play'}
+            >
+              {isCurrentPlaying ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />
+              )}
+            </button>
+
+            <button
+              onClick={onRemove}
+              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 hover:text-rose-400 hover:border-rose-500/30 active:scale-90 transition-all"
+              title="Remove from list"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={onSelectToRead}
+              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 group-hover:text-violet-300 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors active:scale-90"
+              title="Open Song Details"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </>
+        )}
+      </div>
+    </Reorder.Item>
+  );
+};
+
+interface DraggablePlaylistRowProps {
+  pl: PlaylistRecord;
+  onClick: () => void;
+  onEdit: () => void;
+  onDragEnd: () => void;
+}
+
+const DraggablePlaylistRow: React.FC<DraggablePlaylistRowProps> = ({
+  pl,
+  onClick,
+  onEdit,
+  onDragEnd,
+}) => {
+  const dragControls = useDragControls();
+
+  return (
+    <Reorder.Item
+      key={pl.id}
+      value={pl}
+      dragListener={false}
+      dragControls={dragControls}
+      onDragEnd={onDragEnd}
+      whileDrag={{ scale: 1.02, zIndex: 50, boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)' }}
+      onClick={onClick}
+      className="frosted-surface rounded-[22px] px-3 py-2.5 min-h-[68px] cursor-pointer transition-colors flex items-center justify-between gap-2.5 group shadow-sm select-none relative"
+    >
+      {/* YouTube Style Drag Grip Handle */}
+      <div
+        className="cursor-grab active:cursor-grabbing p-1.5 -ml-1 text-slate-400 hover:text-violet-300 transition-colors touch-none shrink-0 flex items-center justify-center select-none"
+        title="Drag to reorder list"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragControls.start(e);
+        }}
+        onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: 'none' }}
+      >
+        <GripVertical className="w-4.5 h-4.5" />
+      </div>
+
+      <div
+        className="w-10 h-10 rounded-[13px] flex items-center justify-center shrink-0 shadow-sm"
+        style={{
+          backgroundColor: `${pl.coverColor || '#8B5CF6'}20`,
+          color: pl.coverColor || '#C4B5FD',
+          border: `1px solid ${pl.coverColor || '#8B5CF6'}35`,
+        }}
+      >
+        <ListMusic className="w-4.5 h-4.5" />
+      </div>
+
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <h3 className="text-[14px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
+          {pl.name}
+        </h3>
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
+          <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
+            {pl.songIds.length} {pl.songIds.length === 1 ? 'TRACK' : 'TRACKS'}
+          </span>
+          <span>•</span>
+          <span className="truncate">{pl.description || 'Offline ready'}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 hover:text-violet-300 hover:border-violet-500/40 active:scale-90 transition-all"
+          title="Edit List"
+        >
+          <Edit2 className="w-3.5 h-3.5" />
+        </button>
+        <div
+          onClick={onClick}
+          className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 group-hover:text-violet-300 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </div>
+      </div>
+    </Reorder.Item>
+  );
+};
 
 export const PlaylistManagerModal: React.FC<PlaylistManagerModalProps> = ({
   allSongs,
@@ -212,6 +450,35 @@ export const PlaylistManagerModal: React.FC<PlaylistManagerModalProps> = ({
         .map((id) => allSongs.find((s) => s.id === id))
         .filter(Boolean) as SongRecord[])
     : [];
+
+  const [orderedSongs, setOrderedSongs] = useState<SongRecord[]>([]);
+
+  useEffect(() => {
+    if (!selectedPlaylist) {
+      setOrderedSongs([]);
+      return;
+    }
+    const currentList = selectedPlaylist.songIds
+      .map((id) => allSongs.find((s) => s.id === id))
+      .filter(Boolean) as SongRecord[];
+    setOrderedSongs(currentList);
+  }, [selectedPlaylist?.id, selectedPlaylist?.songIds, allSongs]);
+
+  const handleSongsDragEnd = async () => {
+    if (!selectedPlaylist) return;
+    const newSongIds = orderedSongs.map((s) => s.id);
+    if (JSON.stringify(newSongIds) !== JSON.stringify(selectedPlaylist.songIds)) {
+      const updated = await songRepository.updatePlaylist(selectedPlaylist.id, {
+        songIds: newSongIds,
+      });
+      setSelectedPlaylist(updated);
+      await loadPlaylists();
+    }
+  };
+
+  const handlePlaylistsDragEnd = async () => {
+    await songRepository.reorderPlaylists(playlists.map((p) => p.id));
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4 select-none">
@@ -429,140 +696,47 @@ export const PlaylistManagerModal: React.FC<PlaylistManagerModalProps> = ({
                   </p>
                 </div>
               ) : (
-                playlistSongs.map((song, idx) => {
-                  const isCurrent = currentSong?.id === song.id;
-                  const isCurrentPlaying = isCurrent && isPlaying;
+                <Reorder.Group
+                  axis="y"
+                  values={orderedSongs}
+                  onReorder={setOrderedSongs}
+                  className="space-y-2 list-none p-0 m-0"
+                >
+                  {orderedSongs.map((song, idx) => {
+                    const isCurrent = currentSong?.id === song.id;
+                    const isCurrentPlaying = isCurrent && isPlaying;
 
-                  return (
-                    <div
-                      key={song.id}
-                      onClick={() => {
-                        if (onSelectSongToRead) {
-                          onSelectSongToRead(song, selectedPlaylist?.id);
-                        } else if (isCurrent) {
-                          togglePlay();
-                        } else {
-                          playSong(song, playlistSongs);
-                        }
-                      }}
-                      className={`frosted-surface rounded-[22px] px-3.5 py-2.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-all flex items-center justify-between gap-3 group shadow-sm ${
-                        isCurrent
-                          ? 'ring-2 ring-violet-500 bg-violet-500/10'
-                          : ''
-                      }`}
-                    >
-                      {/* Left: Standard squircle artwork showing track number or playing equalizer */}
-                      <div className="w-11 h-11 rounded-[14px] bg-violet-500/15 border border-violet-500/25 flex items-center justify-center text-violet-400 shrink-0 shadow-sm">
-                        {isCurrentPlaying ? (
-                          <Volume2 className="w-5 h-5 text-violet-300 animate-pulse" />
-                        ) : (
-                          <span className="text-xs font-mono font-bold text-violet-300">
-                            {String(idx + 1).padStart(2, '0')}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Center Track Info */}
-                      <div className="flex-1 min-w-0 flex flex-col justify-center">
-                        <h4 className="text-[14.5px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
-                          {song.titleBn || song.titleLatin}
-                        </h4>
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
-                          <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
-                            {getCategoryName(song.categoryId)}
-                          </span>
-                          {song.titleLatin && song.titleLatin !== song.titleBn && (
-                            <span className="truncate">{song.titleLatin}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right: Clean, consistent frosted action buttons */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {isReorderMode ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled={idx === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveSong(idx, 'up');
-                              }}
-                              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-300 hover:text-white hover:border-violet-500/40 disabled:opacity-20 active:scale-90 transition-all shadow-sm"
-                              title="Move Up"
-                            >
-                              <ArrowUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={idx === playlistSongs.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveSong(idx, 'down');
-                              }}
-                              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-300 hover:text-white hover:border-violet-500/40 disabled:opacity-20 active:scale-90 transition-all shadow-sm"
-                              title="Move Down"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            {/* Play/Pause Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isCurrent) {
-                                  togglePlay();
-                                } else {
-                                  playSong(song, playlistSongs);
-                                }
-                              }}
-                              className={`w-8 h-8 rounded-full border flex items-center justify-center active:scale-90 transition-all ${
-                                isCurrentPlaying
-                                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm'
-                                  : 'bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:border-violet-500/40'
-                              }`}
-                              title={isCurrentPlaying ? 'Pause' : 'Play'}
-                            >
-                              {isCurrentPlaying ? (
-                                <Pause className="w-3.5 h-3.5 fill-current" />
-                              ) : (
-                                <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />
-                              )}
-                            </button>
-
-                            {/* Remove from playlist button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleSongInPlaylist(song.id);
-                              }}
-                              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 hover:text-rose-400 hover:border-rose-500/30 active:scale-90 transition-all"
-                              title="Remove from list"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Open Song Details Chevron Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (onSelectSongToRead) {
-                                  onSelectSongToRead(song, selectedPlaylist?.id);
-                                }
-                              }}
-                              className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 group-hover:text-violet-300 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors active:scale-90"
-                              title="Open Song Details"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+                    return (
+                      <DraggablePlaylistSongRow
+                        key={song.id}
+                        song={song}
+                        idx={idx}
+                        isCurrent={isCurrent}
+                        isCurrentPlaying={isCurrentPlaying}
+                        categoryName={getCategoryName(song.categoryId)}
+                        isReorderMode={isReorderMode}
+                        onMoveUp={() => moveSong(idx, 'up')}
+                        onMoveDown={() => moveSong(idx, 'down')}
+                        isFirst={idx === 0}
+                        isLast={idx === orderedSongs.length - 1}
+                        onSelectToRead={() => {
+                          if (onSelectSongToRead) {
+                            onSelectSongToRead(song, selectedPlaylist?.id);
+                          }
+                        }}
+                        onTogglePlay={() => {
+                          if (isCurrent) {
+                            togglePlay();
+                          } else {
+                            playSong(song, orderedSongs);
+                          }
+                        }}
+                        onRemove={() => toggleSongInPlaylist(song.id)}
+                        onDragEnd={handleSongsDragEnd}
+                      />
+                    );
+                  })}
+                </Reorder.Group>
               )}
             </div>
           </div>
@@ -629,58 +803,23 @@ export const PlaylistManagerModal: React.FC<PlaylistManagerModalProps> = ({
               </div>
             )}
 
-            {/* Playlist Cards - Styled sleek and simple exactly like SongList */}
-            {playlists.map((pl) => (
-              <div
-                key={pl.id}
-                onClick={() => setSelectedPlaylist(pl)}
-                className="frosted-surface rounded-[22px] px-3.5 py-2.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-all flex items-center justify-between gap-3 group shadow-sm"
-              >
-                {/* Left: Standard squircle icon */}
-                <div
-                  className="w-11 h-11 rounded-[14px] flex items-center justify-center shrink-0 shadow-sm"
-                  style={{
-                    backgroundColor: `${pl.coverColor || '#8B5CF6'}20`,
-                    color: pl.coverColor || '#C4B5FD',
-                    border: `1px solid ${pl.coverColor || '#8B5CF6'}35`,
-                  }}
-                >
-                  <ListMusic className="w-5 h-5" />
-                </div>
-
-                {/* Center Track Info */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <h3 className="text-[14.5px] font-bold text-white font-bengali truncate leading-tight group-hover:text-violet-300 transition-colors">
-                    {pl.name}
-                  </h3>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate leading-none mt-1">
-                    <span className="font-bold uppercase tracking-wider text-[9px] text-[#C4B5FD] bg-[#8B5CF6]/15 px-1.5 h-[17px] inline-flex items-center rounded-md border border-[#8B5CF6]/25 shrink-0 leading-none">
-                      {pl.songIds.length} {pl.songIds.length === 1 ? 'TRACK' : 'TRACKS'}
-                    </span>
-                    <span>•</span>
-                    <span className="truncate">{pl.description || 'Offline ready'}</span>
-                  </div>
-                </div>
-
-                {/* Right: Actions */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenEditPlaylist(pl);
-                    }}
-                    className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 hover:text-violet-300 hover:border-violet-500/40 active:scale-90 transition-all"
-                    title="Edit List"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <div className="w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-400 group-hover:text-violet-300 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors">
-                    <ChevronRight className="w-4 h-4" />
-                  </div>
-                </div>
-              </div>
-            ))}
+            {/* Playlist Cards - Styled sleek and simple with Drag & Drop */}
+            <Reorder.Group
+              axis="y"
+              values={playlists}
+              onReorder={setPlaylists}
+              className="space-y-3 list-none p-0 m-0"
+            >
+              {playlists.map((pl) => (
+                <DraggablePlaylistRow
+                  key={pl.id}
+                  pl={pl}
+                  onClick={() => setSelectedPlaylist(pl)}
+                  onEdit={() => handleOpenEditPlaylist(pl)}
+                  onDragEnd={handlePlaylistsDragEnd}
+                />
+              ))}
+            </Reorder.Group>
           </div>
         )}
 
