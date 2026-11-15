@@ -123,6 +123,33 @@ async function tryTier3Failover(
 ): Promise<WaterfallAudioResult | null> {
   onProgress?.('Tier 3: Engaging decentralized failover audio stream...', 65);
 
+  // Strategy 0: Dedicated Cloudflare Edge Stream Worker
+  const edgeNodes = [
+    `https://audio.ataurbdx.com/?id=${videoId}`,
+    `https://yt-audio.ataurrahman-wub.workers.dev/?id=${videoId}`,
+  ];
+  for (const edgeUrl of edgeNodes) {
+    try {
+      const edgeController = new AbortController();
+      const edgeTimeout = setTimeout(() => edgeController.abort(), 15000);
+      const edgeRes = await fetch(edgeUrl, { signal: edgeController.signal });
+      clearTimeout(edgeTimeout);
+      if (edgeRes.ok) {
+        const blob = await edgeRes.blob();
+        if (blob && blob.size > 8000) {
+          return {
+            blob,
+            format: 'm4a',
+            sourceType: 'tier3_cloudflare_edge',
+            tierUsed: 'tier3_failover',
+          };
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Waterfall Cloudflare Edge (${edgeUrl}) failed]:`, e?.message);
+    }
+  }
+
   // Strategy A: Cobalt Open Converter API Nodes
   const cobaltNodes = [
     'https://api.cobalt.tools',
