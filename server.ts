@@ -1662,6 +1662,23 @@ app.get(['/download', '/api/audio/download'], async (req, res) => {
   }
 });
 
+// Direct APK download route for Android users
+app.get(['/download-apk', '/TourLyrics.apk', '/app-debug.apk'], (_req, res) => {
+  const possiblePaths = [
+    path.resolve(__dirname, 'dist', 'TourLyrics.apk'),
+    path.resolve(__dirname, 'public', 'TourLyrics.apk'),
+    path.resolve(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment; filename="TourLyrics.apk"');
+      return res.sendFile(p);
+    }
+  }
+  res.status(404).send('APK file not found on server.');
+});
+
 // Start dev or production server
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
