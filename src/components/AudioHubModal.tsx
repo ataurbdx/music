@@ -176,67 +176,27 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
     setStatusFeedback('Extracting YouTube audio stream...');
 
     try {
-      let audioBlob: Blob | null = null;
-      let downloadedFormat = format;
-      let nativeLocalUri: string | null = null;
+      const { downloadWaterfallAudio } = await import('../services/waterfallAudioDownloader');
 
-      // Stage 1: Try Direct on-device download (Zero VPS, Zero Bot Block)
-      const ytIdMatch = sanitizedUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
-      const targetVideoId = ytIdMatch ? ytIdMatch[1] : null;
-
-      if (targetVideoId) {
-        try {
-          setStatusFeedback('Downloading audio directly on device...');
-          const { youtubeDirectService } = await import('../services/youtubeDownloader');
-          const directStream = await youtubeDirectService.downloadAudioStream(targetVideoId);
-          if (directStream && directStream.blob && directStream.blob.size > 5000) {
-            audioBlob = directStream.blob;
-            downloadedFormat = directStream.format || 'm4a';
-            nativeLocalUri = directStream.localUri || null;
-          }
-        } catch (deviceDownloadErr) {
-          console.warn('Direct device audio download fallback to bridge:', deviceDownloadErr);
+      const waterfallResult = await downloadWaterfallAudio(
+        sanitizedUrl,
+        format,
+        quality,
+        (statusText, progressPct) => {
+          setStatusFeedback(statusText);
+          songRepository.updateDownloadQueueItem(queueItem.id, {
+            status: 'extracting',
+            progress: progressPct,
+          }).then(() => refreshQueue()).catch(() => {});
         }
-      }
+      );
 
-      // Stage 2: Fallback to Server Bridge if direct stream was not available
-      if (!audioBlob) {
-        const settings = await songRepository.getSettings();
-        const isLocalPcWeb = typeof window !== 'undefined' && window.location.port === '3000' && !nativeBridge.isNative();
-        const serverBase = isLocalPcWeb ? '' : (settings.ytdlpServerUrl?.trim().replace(/\/$/, '') || 'https://yt-dlp-server-rr8t.onrender.com');
-        const endpoint = serverBase
-          ? `${serverBase}/download?url=${encodeURIComponent(sanitizedUrl)}&format=${format}&quality=${quality}`
-          : `/api/audio/download?url=${encodeURIComponent(sanitizedUrl)}&format=${format}&quality=${quality}`;
-
-        await songRepository.updateDownloadQueueItem(queueItem.id, {
-          status: 'extracting',
-          progress: 35,
-        });
-        await refreshQueue();
-        setStatusFeedback('Connecting to yt-dlp transcoder engine...');
-
-        const res = await fetch(endpoint);
-        if (!res.ok) {
-          let errMsg = `Extraction error (HTTP ${res.status})`;
-          try {
-            const errData = await res.json();
-            if (errData?.error) errMsg = errData.error;
-          } catch {
-            const text = await res.text();
-            if (text) errMsg = text.slice(0, 150);
-          }
-          throw new Error(errMsg);
-        }
-
-        audioBlob = await res.blob();
-        if (!audioBlob || audioBlob.size < 5000) {
-          throw new Error('Downloaded audio stream was empty or blocked by YouTube.');
-        }
-      }
+      const audioBlob = waterfallResult.blob;
+      const downloadedFormat = waterfallResult.format;
 
       await songRepository.updateDownloadQueueItem(queueItem.id, {
         status: 'converting',
-        progress: 85,
+        progress: 90,
       });
 
       const meta: SongAudioMeta = {
@@ -244,8 +204,8 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
         bitrate: `${quality}bps`,
         sizeBytes: audioBlob.size,
         durationSec: 180,
-        sourceType: 'yt-download',
-        localUri: nativeLocalUri,
+        sourceType: waterfallResult.sourceType,
+        localUri: null,
       };
 
       await songRepository.saveAudioBlob(targetSongId, audioBlob, `audio/${downloadedFormat}`, meta);
@@ -256,12 +216,13 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
       await songRepository.updateDownloadQueueItem(queueItem.id, {
         status: 'completed',
         progress: 100,
+        error: null,
       });
 
       const updated = await songRepository.getSongById(targetSongId);
       if (updated) onSongUpdated(updated);
 
-      setStatusFeedback(`Download completed! Track saved offline (${(audioBlob.size / (1024 * 1024)).toFixed(1)} MB).`);
+      setStatusFeedback(`Download completed via ${waterfallResult.tierUsed.replace('_', ' ').toUpperCase()}! Track saved offline (${(audioBlob.size / (1024 * 1024)).toFixed(1)} MB).`);
       await refreshQueue();
       await refreshStorage();
     } catch (err: any) {
@@ -291,46 +252,39 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
       });
       await refreshQueue();
 
-      const settings = await songRepository.getSettings();
-      const isLocalPcWeb = typeof window !== 'undefined' && window.location.port === '3000' && !nativeBridge.isNative();
-      const serverBase = isLocalPcWeb ? '' : (settings.ytdlpServerUrl?.trim().replace(/\/$/, '') || 'https://yt-dlp-server-rr8t.onrender.com');
-      const endpoint = serverBase
-        ? `${serverBase}/download?url=${encodeURIComponent(item.youtubeUrl)}&format=${item.format}&quality=${item.quality}`
-        : `/api/audio/download?url=${encodeURIComponent(item.youtubeUrl)}&format=${item.format}&quality=${item.quality}`;
+      const { downloadWaterfallAudio } = await import('../services/waterfallAudioDownloader');
 
-      const res = await fetch(endpoint);
-      if (!res.ok) {
-        let errMsg = `Extraction error (HTTP ${res.status})`;
-        try {
-          const errData = await res.json();
-          if (errData?.error) errMsg = errData.error;
-        } catch {
-          const text = await res.text();
-          if (text) errMsg = text.slice(0, 150);
+      const waterfallResult = await downloadWaterfallAudio(
+        item.youtubeUrl,
+        item.format,
+        item.quality,
+        (statusText, progressPct) => {
+          setStatusFeedback(statusText);
+          songRepository.updateDownloadQueueItem(item.id, {
+            status: 'extracting',
+            progress: progressPct,
+          }).then(() => refreshQueue()).catch(() => {});
         }
-        throw new Error(errMsg);
-      }
+      );
 
-      const audioBlob = await res.blob();
-      if (!audioBlob || audioBlob.size < 5000) {
-        throw new Error('Downloaded audio stream was empty or blocked by YouTube.');
-      }
+      const audioBlob = waterfallResult.blob;
+      const downloadedFormat = waterfallResult.format;
 
       await songRepository.updateDownloadQueueItem(item.id, {
         status: 'converting',
-        progress: 85,
+        progress: 90,
       });
 
       const meta: SongAudioMeta = {
-        format: item.format,
+        format: downloadedFormat,
         bitrate: `${item.quality}bps`,
         sizeBytes: audioBlob.size,
         durationSec: 180,
-        sourceType: 'yt-download',
+        sourceType: waterfallResult.sourceType,
         localUri: null,
       };
 
-      await songRepository.saveAudioBlob(item.songId, audioBlob, `audio/${item.format}`, meta);
+      await songRepository.saveAudioBlob(item.songId, audioBlob, `audio/${downloadedFormat}`, meta);
       await songRepository.updateDownloadQueueItem(item.id, {
         status: 'completed',
         progress: 100,
@@ -340,7 +294,7 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
       const updated = await songRepository.getSongById(item.songId);
       if (updated) onSongUpdated(updated);
 
-      setStatusFeedback(`Download completed! Track saved offline (${(audioBlob.size / (1024 * 1024)).toFixed(1)} MB).`);
+      setStatusFeedback(`Retry succeeded via ${waterfallResult.tierUsed.replace('_', ' ').toUpperCase()}! Track saved offline (${(audioBlob.size / (1024 * 1024)).toFixed(1)} MB).`);
       await refreshQueue();
       await refreshStorage();
     } catch (err: any) {
@@ -836,8 +790,8 @@ export const AudioHubModal: React.FC<AudioHubModalProps> = ({
             <div className="flex items-center justify-between pb-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-[#94A3B8] light:text-slate-500">Download Jobs</span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/5 light:bg-black/5 border border-white/10 light:border-black/10 text-purple-300">
-                  {typeof window !== 'undefined' && window.location.port === '3000' && !nativeBridge.isNative() ? '⚡ Local PC Bridge' : '☁️ Cloud VPS Bridge'}
+                <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300">
+                  🌊 Waterfall Cascade (3-Tier Engine)
                 </span>
               </div>
               <button

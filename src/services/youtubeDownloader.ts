@@ -90,7 +90,7 @@ class YouTubeDirectService {
       chunks.push(chunk);
     }
 
-    const blob = new Blob(chunks, { type: 'audio/mp4' });
+    const blob = new Blob(chunks as any[], { type: 'audio/mp4' });
 
     return {
       blob,
